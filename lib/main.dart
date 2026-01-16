@@ -16,7 +16,11 @@ class BMSTrackerApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blueAccent),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blueAccent,
+        brightness: Brightness.light,
+      ),
       home: const DataScrubberScreen(),
     );
   }
@@ -47,23 +51,37 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
         final List<Map<dynamic, dynamic>> sortedList = sortedKeys
             .map((k) => Map<dynamic, dynamic>.from(rawData[k]))
             .toList();
-        setState(() {
-          _history = sortedList;
-          if (_isLoading || _currentIndex == _history.length - 2) {
-            _currentIndex = (_history.length - 1).toDouble();
-          }
-          _isLoading = false;
-        });
+
+        if (mounted) {
+          setState(() {
+            _history = sortedList;
+            if (_isLoading || _currentIndex >= _history.length - 2) {
+              _currentIndex = (_history.length - 1).toDouble();
+            }
+            _isLoading = false;
+          });
+        }
       }
     });
   }
 
+  // UPDATED: Added seconds (:ss) to the format
   String _formatDate(dynamic ts) {
     if (ts == null) return "Unknown Time";
-    DateTime date = DateTime.fromMillisecondsSinceEpoch(
-      (ts is int ? ts : int.parse(ts.toString())) * 1000,
-    );
-    return DateFormat('MMM dd, yyyy - hh:mm:ss a').format(date);
+    try {
+      DateTime date = DateTime.fromMillisecondsSinceEpoch(
+        (ts is int ? ts : int.parse(ts.toString())) * 1000,
+      );
+      return DateFormat('MMM dd, yyyy - hh:mm:ss a').format(date);
+    } catch (e) {
+      return "Invalid Date";
+    }
+  }
+
+  String _num(dynamic val, {int decimals = 1}) {
+    if (val == null) return "0.0";
+    double parsed = double.tryParse(val.toString()) ?? 0.0;
+    return parsed.toStringAsFixed(decimals);
   }
 
   @override
@@ -76,113 +94,162 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
     }
 
     int safeIndex = _currentIndex.toInt().clamp(0, _history.length - 1);
-    final currentRecord = _history[safeIndex];
+    final record = _history[safeIndex];
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text('Odometer'),
+        title: const Text(
+          'BMS Dashboard',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
       body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Center(
-              child: SizedBox(
-                // This makes the card elongated (taller)
-                width: MediaQuery.of(context).size.width * 0.9,
-                height: MediaQuery.of(context).size.height * 0.6,
-                child: Card(
-                  margin: const EdgeInsets.all(12),
-                  elevation: 20,
-                  shadowColor: Colors.black.withAlpha(205),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+          Center(
+            child: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.88,
+              height:
+                  MediaQuery.of(context).size.height *
+                  0.65, // Slight increase to fit extra location rows
+              child: Card(
+                elevation: 10,
+                shadowColor: Colors.black26,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 25,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 25.0,
-                      vertical: 30,
-                    ),
-                    child: Column(
-                      // Changed to spaceEvenly to distribute items vertically
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Column(
-                          children: [
-                            const Icon(
-                              Icons.speed,
-                              size: 70, // Slightly larger icon
-                              color: Colors.blueAccent,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              "${currentRecord['speed']?.toStringAsFixed(1) ?? '0.0'} Km/s",
-                              style: const TextStyle(
-                                fontSize: 55,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 40, thickness: 1.2),
-                        Column(
-                          children: [
-                            _buildRow(
-                              Icons.history,
-                              "Odometer",
-                              "${currentRecord['odometer']} km",
-                            ),
-                            _buildRow(
-                              Icons.location_on,
-                              "Latitude",
-                              "${currentRecord['latitude']}",
-                            ),
-                            _buildRow(
-                              Icons.location_searching,
-                              "Longitude",
-                              "${currentRecord['longitude']}",
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(15),
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent.withAlpha(13),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.blueAccent.withAlpha(26),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(
-                                Icons.access_time,
-                                size: 22,
-                                color: Colors.orange,
-                              ),
-                              const SizedBox(width: 8),
                               Text(
-                                _formatDate(currentRecord['timestamp']),
+                                _num(record['speed']),
                                 style: const TextStyle(
+                                  fontSize: 48,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  letterSpacing: -1,
+                                ),
+                              ),
+                              const Text(
+                                "km/h",
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
                                 ),
                               ),
                             ],
                           ),
+                          _buildAlarmChip(
+                            record['alarm']?.toString() ?? "No Alarm",
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 30),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildStatCircle(
+                            Icons.battery_charging_full,
+                            "${record['soc']}%",
+                            "SOC",
+                            Colors.green,
+                          ),
+                          _buildStatCircle(
+                            Icons.bolt,
+                            "${_num(record['voltage'])}V",
+                            "Voltage",
+                            Colors.orange,
+                          ),
+                          _buildStatCircle(
+                            Icons.thermostat,
+                            "${record['avg_temp']}°C",
+                            "Temp",
+                            Colors.redAccent,
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildDetailRow(
+                              Icons.electric_moped,
+                              "Current",
+                              "${_num(record['current'])} A",
+                            ),
+                            _buildDetailRow(
+                              Icons.history,
+                              "Odometer",
+                              "${record['odometer']} km",
+                            ),
+                            // UPDATED: Split Lat and Long for better visibility and precision
+                            _buildDetailRow(
+                              Icons.location_on,
+                              "Latitude",
+                              "${record['latitude']}",
+                            ),
+                            _buildDetailRow(
+                              Icons.location_on_outlined,
+                              "Longitude",
+                              "${record['longitude']}",
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withAlpha(25),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              size: 18,
+                              color: Colors.blueAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatDate(record['timestamp']),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-          Container(
-            padding: const EdgeInsets.fromLTRB(30, 20, 30, 40),
+
+          const SizedBox(height: 40),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Column(
               children: [
                 Slider(
@@ -197,13 +264,80 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildTimeLabel("OLDEST", Colors.grey),
-                      _buildTimeLabel("NEWEST", Colors.blueAccent),
+                      _buildTimeLabel("HISTORY", Colors.grey),
+                      _buildTimeLabel("LIVE DATA", Colors.blueAccent),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCircle(
+    IconData icon,
+    String value,
+    String label,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        CircleAvatar(
+          backgroundColor: color.withAlpha(25),
+          radius: 20,
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ],
+    );
+  }
+
+  Widget _buildAlarmChip(String alarm) {
+    bool isWarning = alarm.toLowerCase() != "no alarm";
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: isWarning ? Colors.red : Colors.green.withAlpha(40),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        alarm.toUpperCase(),
+        style: TextStyle(
+          color: isWarning ? Colors.white : Colors.green,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: 4,
+      ), // Tighter padding for extra rows
+      child: Row(
+        children: [
+          Icon(icon, size: 24, color: Colors.blueGrey),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 16, color: Colors.black54),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -214,39 +348,10 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
     return Text(
       text,
       style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.1,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
         color: color,
-      ),
-    );
-  }
-
-  Widget _buildRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 12,
-      ), // Increased vertical spacing
-      child: Row(
-        children: [
-          Icon(icon, size: 24, color: Colors.blueGrey),
-          const SizedBox(width: 12),
-          Text(
-            "$label: ",
-            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 18),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
+        letterSpacing: 1.0,
       ),
     );
   }
