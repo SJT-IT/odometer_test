@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "318323347329",
+    "firebase_url": "https://smsviewerapp-42d29-default-rtdb.firebaseio.com",
+    "project_id": "smsviewerapp-42d29",
+    "storage_bucket": "smsviewerapp-42d29.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318323347329:android:36e59f311fae05dcb66280",
+        "android_client_info": {
+          "package_name": "com.example.odometer_test"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAbetqKg0TuR8bcrGe7iLhbTnAJcNR9ArM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
