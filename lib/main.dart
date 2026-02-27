@@ -985,13 +985,12 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     'location',
   );
 
-  double? _distance; // Current month distance
-  double? _prevDistance; // Previous month distance
+  double? _currentRunningDistance; // Current month running
+  double? _currentMonthDistance; // Completed month distance
+  double? _prevMonthDistance; // Previous month distance
   bool _loading = true;
 
-  // Configurable snapshot hour
   final int blockStartHour = 9;
-  final int blockDurationHours = 1;
 
   @override
   void initState() {
@@ -1009,17 +1008,22 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     return DateTime.utc(prevMonth.year, prevMonth.month, 1, hour);
   }
 
+  DateTime getMonthEnd(DateTime date) {
+    final nextMonth = (date.month < 12)
+        ? DateTime.utc(date.year, date.month + 1, 1)
+        : DateTime.utc(date.year + 1, 1, 1);
+    return nextMonth.subtract(const Duration(seconds: 1));
+  }
+
   Future<void> _calculateMonthlyDistance() async {
     final now = DateTime.now().toUtc();
 
-    final startCurrent = getMonthStart(now, hour: blockStartHour);
-    final startPrev = getPrevMonthStart(now, hour: blockStartHour);
-
-    final endCurrent = startCurrent.add(Duration(hours: blockDurationHours));
-    final endPrev = startPrev.add(Duration(hours: blockDurationHours));
-
-    final startCurrentUnix = _toUnix(endCurrent);
-    final startPrevUnix = _toUnix(endPrev);
+    final startCurrentMonth = getMonthStart(now, hour: blockStartHour);
+    final startPrevMonth = getPrevMonthStart(now, hour: blockStartHour);
+    final startMonthBeforePrev = getPrevMonthStart(
+      startPrevMonth,
+      hour: blockStartHour,
+    );
 
     final snapshot = await _dbRef.get();
     if (!snapshot.exists) {
@@ -1030,34 +1034,64 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     final Map<dynamic, dynamic> rawData =
         snapshot.value as Map<dynamic, dynamic>;
 
-    double? odoCurrent;
-    double? odoPrev;
-    int tsCurrent = 0;
-    int tsPrev = 0;
+    double? odoFirstPrevMonth;
+    double? odoFirstPrevPrevMonth;
+    double? odoFirstCurrentMonth;
+    double? odoLatestCurrentMonth;
 
-    rawData.forEach((key, value) {
-      final record = Map<dynamic, dynamic>.from(value);
+    int tsFirstPrevMonth = 1 << 30;
+    int tsFirstPrevPrevMonth = 1 << 30;
+    int tsFirstCurrentMonth = 1 << 30;
+    int tsLatestCurrentMonth = 0;
+
+    for (var entry in rawData.entries) {
+      final record = Map<dynamic, dynamic>.from(entry.value);
       final ts = record['timestamp'];
       final odo = double.tryParse(record['odometer'].toString());
-      if (ts == null || odo == null) return;
+      if (ts == null || odo == null) continue;
 
-      // last reading in block
-      if (ts <= startCurrentUnix && ts >= tsCurrent) {
-        odoCurrent = odo;
-        tsCurrent = ts;
+      // Previous month start reading
+      if (ts >= _toUnix(startPrevMonth) && ts < tsFirstPrevMonth) {
+        odoFirstPrevMonth = odo;
+        tsFirstPrevMonth = ts;
       }
-      if (ts <= startPrevUnix && ts >= tsPrev) {
-        odoPrev = odo;
-        tsPrev = ts;
+
+      // Month before previous start reading
+      if (ts >= _toUnix(startMonthBeforePrev) && ts < tsFirstPrevPrevMonth) {
+        odoFirstPrevPrevMonth = odo;
+        tsFirstPrevPrevMonth = ts;
       }
-    });
 
-    _distance = (odoCurrent != null && odoPrev != null)
-        ? odoCurrent! - odoPrev!
-        : null;
+      // Current month start reading
+      if (ts >= _toUnix(startCurrentMonth) && ts < tsFirstCurrentMonth) {
+        odoFirstCurrentMonth = odo;
+        tsFirstCurrentMonth = ts;
+      }
 
-    // Optional: previous month running (demo placeholder)
-    _prevDistance = 120.0;
+      // Latest reading up to now
+      if (ts <= _toUnix(now) && ts > tsLatestCurrentMonth) {
+        odoLatestCurrentMonth = odo;
+        tsLatestCurrentMonth = ts;
+      }
+    }
+
+    // Current running distance (from 1st of month → latest)
+    if (odoFirstCurrentMonth != null && odoLatestCurrentMonth != null) {
+      _currentRunningDistance = odoLatestCurrentMonth - odoFirstCurrentMonth;
+    }
+
+    // Completed month distance (only if month is complete)
+    final isMonthComplete = now.isAfter(getMonthEnd(now));
+    if (isMonthComplete &&
+        odoFirstCurrentMonth != null &&
+        odoLatestCurrentMonth != null) {
+      _currentMonthDistance = odoLatestCurrentMonth - odoFirstCurrentMonth;
+    }
+
+    // Previous month distance
+    if (odoFirstPrevMonth != null && odoFirstPrevPrevMonth != null) {
+      _prevMonthDistance = odoFirstPrevMonth - odoFirstPrevPrevMonth;
+    }
 
     setState(() => _loading = false);
   }
@@ -1075,30 +1109,43 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Current Month",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.blueGrey.shade700,
-              ),
+            const SizedBox(height: 20),
+            _buildDistanceCard(
+              "Current Month Completed",
+              _currentMonthDistance,
+              highlightColor: Colors.green,
             ),
-            const SizedBox(height: 10),
-            Center(
-              child: _distance == null
-                  ? const Text("Not enough data")
-                  : Text(
-                      "${_distance!.toStringAsFixed(2)} km",
-                      style: const TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueAccent,
-                      ),
-                    ),
+            _buildDistanceCard(
+              "Current Month Running",
+              _currentRunningDistance,
+              highlightColor: Colors.blueAccent,
             ),
-            const SizedBox(height: 30),
-            Text(
+            const SizedBox(height: 20),
+            _buildDistanceCard(
               "Previous Month",
+              _prevMonthDistance,
+              highlightColor: Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDistanceCard(
+    String label,
+    double? value, {
+    Color highlightColor = Colors.blueAccent,
+  }) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 5,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text(
+              label,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -1107,62 +1154,16 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
             ),
             const SizedBox(height: 10),
             Center(
-              child: _prevDistance == null
+              child: value == null
                   ? const Text("-- km")
                   : Text(
-                      "${_prevDistance!.toStringAsFixed(2)} km",
-                      style: const TextStyle(
+                      "${value.toStringAsFixed(2)} km",
+                      style: TextStyle(
                         fontSize: 32,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey,
+                        fontWeight: FontWeight.bold,
+                        color: highlightColor,
                       ),
                     ),
-            ),
-            const SizedBox(height: 40),
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 5,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.info_outline, color: Colors.blueAccent),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            "This view shows the total distance traveled by the vehicle for the current month compared to the previous month.",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.calendar_today,
-                          color: Colors.blueAccent,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "Timeframe: 1st → end of month",
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
             ),
           ],
         ),
