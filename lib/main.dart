@@ -688,10 +688,17 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
 
   String _formatDate(dynamic ts) {
     if (ts == null) return "Unknown Time";
+
     try {
+      final int timestamp = ts is int ? ts : int.parse(ts.toString());
+
+      if (timestamp == 0) return "No Data";
+
       DateTime date = DateTime.fromMillisecondsSinceEpoch(
-        (ts is int ? ts : int.parse(ts.toString())) * 1000,
+        timestamp * 1000,
+        isUtc: true, // optional but recommended
       );
+
       return DateFormat('MMM dd, yyyy - hh:mm:ss a').format(date);
     } catch (e) {
       return "Invalid Date";
