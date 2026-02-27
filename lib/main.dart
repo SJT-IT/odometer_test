@@ -1034,38 +1034,32 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     final Map<dynamic, dynamic> rawData =
         snapshot.value as Map<dynamic, dynamic>;
 
-    double? odoFirstPrevMonth;
-    double? odoFirstPrevPrevMonth;
-    double? odoFirstCurrentMonth;
-    double? odoLatestCurrentMonth;
+    // Variables to track odometer readings
+    double? odoBeforeCurrentMonth; // last reading before current month
+    double? odoLatestCurrentMonth; // latest reading up to now
 
-    int tsFirstPrevMonth = 1 << 30;
-    int tsFirstPrevPrevMonth = 1 << 30;
-    int tsFirstCurrentMonth = 1 << 30;
+    double? odoBeforePrevMonth; // last reading before previous month
+    double?
+    odoBeforeMonthBeforePrev; // last reading before month before previous
+
+    // Timestamps to track the closest readings
+    int tsBeforeCurrentMonth = -1;
     int tsLatestCurrentMonth = 0;
+    int tsBeforePrevMonth = -1;
+    int tsBeforeMonthBeforePrev = -1;
 
+    // Iterate through all records
     for (var entry in rawData.entries) {
       final record = Map<dynamic, dynamic>.from(entry.value);
       final ts = record['timestamp'];
       final odo = double.tryParse(record['odometer'].toString());
       if (ts == null || odo == null) continue;
 
-      // Previous month start reading
-      if (ts >= _toUnix(startPrevMonth) && ts < tsFirstPrevMonth) {
-        odoFirstPrevMonth = odo;
-        tsFirstPrevMonth = ts;
-      }
-
-      // Month before previous start reading
-      if (ts >= _toUnix(startMonthBeforePrev) && ts < tsFirstPrevPrevMonth) {
-        odoFirstPrevPrevMonth = odo;
-        tsFirstPrevPrevMonth = ts;
-      }
-
-      // Current month start reading
-      if (ts >= _toUnix(startCurrentMonth) && ts < tsFirstCurrentMonth) {
-        odoFirstCurrentMonth = odo;
-        tsFirstCurrentMonth = ts;
+      // --- Current Month ---
+      // Last reading before month start
+      if (ts <= _toUnix(startCurrentMonth) && ts > tsBeforeCurrentMonth) {
+        odoBeforeCurrentMonth = odo;
+        tsBeforeCurrentMonth = ts;
       }
 
       // Latest reading up to now
@@ -1073,25 +1067,40 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
         odoLatestCurrentMonth = odo;
         tsLatestCurrentMonth = ts;
       }
+
+      // --- Previous Month ---
+      if (ts <= _toUnix(startPrevMonth) && ts > tsBeforePrevMonth) {
+        odoBeforePrevMonth = odo;
+        tsBeforePrevMonth = ts;
+      }
+
+      // --- Month Before Previous ---
+      if (ts <= _toUnix(startMonthBeforePrev) && ts > tsBeforeMonthBeforePrev) {
+        odoBeforeMonthBeforePrev = odo;
+        tsBeforeMonthBeforePrev = ts;
+      }
     }
 
-    // Current running distance (from 1st of month → latest)
-    if (odoFirstCurrentMonth != null && odoLatestCurrentMonth != null) {
-      _currentRunningDistance = odoLatestCurrentMonth - odoFirstCurrentMonth;
-    }
-
-    // Completed month distance (only if month is complete)
-    final isMonthComplete = now.isAfter(getMonthEnd(now));
-    if (isMonthComplete &&
-        odoFirstCurrentMonth != null &&
-        odoLatestCurrentMonth != null) {
-      _currentMonthDistance = odoLatestCurrentMonth - odoFirstCurrentMonth;
-    }
+    // --- Compute Distances ---
+    _currentRunningDistance =
+        (odoBeforeCurrentMonth != null && odoLatestCurrentMonth != null)
+        ? odoLatestCurrentMonth - odoBeforeCurrentMonth
+        : null;
 
     // Previous month distance
-    if (odoFirstPrevMonth != null && odoFirstPrevPrevMonth != null) {
-      _prevMonthDistance = odoFirstPrevMonth - odoFirstPrevPrevMonth;
-    }
+    _prevMonthDistance =
+        (odoBeforePrevMonth != null && odoBeforeMonthBeforePrev != null)
+        ? odoBeforePrevMonth - odoBeforeMonthBeforePrev
+        : null;
+
+    // Completed month distance (only if month has fully passed)
+    final isMonthComplete = now.isAfter(getMonthEnd(now));
+    _currentMonthDistance =
+        (isMonthComplete &&
+            odoBeforeCurrentMonth != null &&
+            odoLatestCurrentMonth != null)
+        ? odoLatestCurrentMonth - odoBeforeCurrentMonth
+        : null;
 
     setState(() => _loading = false);
   }
