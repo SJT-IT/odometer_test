@@ -986,7 +986,7 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
   );
 
   double? _currentRunningDistance; // Current month running
-  double? _currentMonthDistance; // Completed month distance
+  double? _currentMonthDistance; // Completed month distance (last full month)
   double? _prevMonthDistance; // Previous month distance
   bool _loading = true;
 
@@ -1008,22 +1008,29 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     return DateTime.utc(prevMonth.year, prevMonth.month, 1, hour);
   }
 
-  DateTime getMonthEnd(DateTime date) {
-    final nextMonth = (date.month < 12)
-        ? DateTime.utc(date.year, date.month + 1, 1)
-        : DateTime.utc(date.year + 1, 1, 1);
-    return nextMonth.subtract(const Duration(seconds: 1));
+  // Helper to safely calculate distance
+  double? calculateDistance(double? start, double? end) {
+    if (start == null || end == null) return null;
+    final diff = end - start;
+    if (diff < 0) return null; // Prevent impossible negative values
+    return diff;
   }
 
   Future<void> _calculateMonthlyDistance() async {
     final now = DateTime.now().toUtc();
 
-    final startCurrentMonth = getMonthStart(now, hour: blockStartHour);
-    final startPrevMonth = getPrevMonthStart(now, hour: blockStartHour);
+    final startCurrentMonth = getMonthStart(
+      now,
+      hour: blockStartHour,
+    ); // March 1
+    final startPrevMonth = getPrevMonthStart(
+      now,
+      hour: blockStartHour,
+    ); // Feb 1
     final startMonthBeforePrev = getPrevMonthStart(
       startPrevMonth,
       hour: blockStartHour,
-    );
+    ); // Jan 1
 
     final snapshot = await _dbRef.get();
     if (!snapshot.exists) {
@@ -1034,73 +1041,66 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
     final Map<dynamic, dynamic> rawData =
         snapshot.value as Map<dynamic, dynamic>;
 
-    // Variables to track odometer readings
-    double? odoBeforeCurrentMonth; // last reading before current month
-    double? odoLatestCurrentMonth; // latest reading up to now
+    // Track odometer readings
+    double? odoStartCurrentMonth; // Mar1
+    double? odoStartPrevMonth; // Feb1
+    double? odoStartMonthBeforePrev; // Jan1
+    double? odoLatest; // latest reading
 
-    double? odoBeforePrevMonth; // last reading before previous month
-    double?
-    odoBeforeMonthBeforePrev; // last reading before month before previous
+    int tsStartCurrentMonth = -1;
+    int tsStartPrevMonth = -1;
+    int tsStartMonthBeforePrev = -1;
+    int tsLatest = 0;
 
-    // Timestamps to track the closest readings
-    int tsBeforeCurrentMonth = -1;
-    int tsLatestCurrentMonth = 0;
-    int tsBeforePrevMonth = -1;
-    int tsBeforeMonthBeforePrev = -1;
-
-    // Iterate through all records
     for (var entry in rawData.entries) {
       final record = Map<dynamic, dynamic>.from(entry.value);
       final ts = record['timestamp'];
       final odo = double.tryParse(record['odometer'].toString());
       if (ts == null || odo == null) continue;
 
-      // --- Current Month ---
-      // Last reading before month start
-      if (ts <= _toUnix(startCurrentMonth) && ts > tsBeforeCurrentMonth) {
-        odoBeforeCurrentMonth = odo;
-        tsBeforeCurrentMonth = ts;
+      // Last reading before current month start (Mar1)
+      if (ts <= _toUnix(startCurrentMonth) && ts > tsStartCurrentMonth) {
+        odoStartCurrentMonth = odo;
+        tsStartCurrentMonth = ts;
+      }
+
+      // Last reading before previous month start (Feb1)
+      if (ts <= _toUnix(startPrevMonth) && ts > tsStartPrevMonth) {
+        odoStartPrevMonth = odo;
+        tsStartPrevMonth = ts;
+      }
+
+      // Last reading before month before previous start (Jan1)
+      if (ts <= _toUnix(startMonthBeforePrev) && ts > tsStartMonthBeforePrev) {
+        odoStartMonthBeforePrev = odo;
+        tsStartMonthBeforePrev = ts;
       }
 
       // Latest reading up to now
-      if (ts <= _toUnix(now) && ts > tsLatestCurrentMonth) {
-        odoLatestCurrentMonth = odo;
-        tsLatestCurrentMonth = ts;
-      }
-
-      // --- Previous Month ---
-      if (ts <= _toUnix(startPrevMonth) && ts > tsBeforePrevMonth) {
-        odoBeforePrevMonth = odo;
-        tsBeforePrevMonth = ts;
-      }
-
-      // --- Month Before Previous ---
-      if (ts <= _toUnix(startMonthBeforePrev) && ts > tsBeforeMonthBeforePrev) {
-        odoBeforeMonthBeforePrev = odo;
-        tsBeforeMonthBeforePrev = ts;
+      if (ts <= _toUnix(now) && ts > tsLatest) {
+        odoLatest = odo;
+        tsLatest = ts;
       }
     }
 
     // --- Compute Distances ---
-    _currentRunningDistance =
-        (odoBeforeCurrentMonth != null && odoLatestCurrentMonth != null)
-        ? odoLatestCurrentMonth - odoBeforeCurrentMonth
-        : null;
+    // Current Completed Month = last full month (Feb → Mar)
+    _currentMonthDistance = calculateDistance(
+      odoStartPrevMonth,
+      odoStartCurrentMonth,
+    );
 
-    // Previous month distance
-    _prevMonthDistance =
-        (odoBeforePrevMonth != null && odoBeforeMonthBeforePrev != null)
-        ? odoBeforePrevMonth - odoBeforeMonthBeforePrev
-        : null;
+    // Current Running Month = March so far
+    _currentRunningDistance = calculateDistance(
+      odoStartCurrentMonth,
+      odoLatest,
+    );
 
-    // Completed month distance (only if month has fully passed)
-    final isMonthComplete = now.isAfter(getMonthEnd(now));
-    _currentMonthDistance =
-        (isMonthComplete &&
-            odoBeforeCurrentMonth != null &&
-            odoLatestCurrentMonth != null)
-        ? odoLatestCurrentMonth - odoBeforeCurrentMonth
-        : null;
+    // Previous Month = Jan → Feb
+    _prevMonthDistance = calculateDistance(
+      odoStartMonthBeforePrev,
+      odoStartPrevMonth,
+    );
 
     setState(() => _loading = false);
   }
@@ -1120,7 +1120,7 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
           children: [
             const SizedBox(height: 20),
             _buildDistanceCard(
-              "Current Month Completed",
+              "Previous Month Total",
               _currentMonthDistance,
               highlightColor: Colors.green,
             ),
@@ -1131,7 +1131,7 @@ class _MonthlyDistanceScreenState extends State<MonthlyDistanceScreen> {
             ),
             const SizedBox(height: 20),
             _buildDistanceCard(
-              "Previous Month",
+              "Month Before Last",
               _prevMonthDistance,
               highlightColor: Colors.grey,
             ),
