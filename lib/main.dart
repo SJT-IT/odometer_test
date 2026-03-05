@@ -692,7 +692,7 @@ class _DataScrubberScreenState extends State<DataScrubberScreen> {
     try {
       final int timestamp = ts is int ? ts : int.parse(ts.toString());
 
-      if (timestamp == 0) return "No Data";
+      if (timestamp == 0) return "No Time Data";
 
       DateTime date = DateTime.fromMillisecondsSinceEpoch(
         timestamp * 1000,
